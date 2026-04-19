@@ -6,7 +6,7 @@ MicroPython running bare-metal on the **A2O** core — an open-source 64-bit Pow
 
 | Component | Implementation |
 |-----------|---------------|
-| CPU Core | A2O (a2owb Verilog), dual-issue, in-order, 64-bit BE |
+| CPU Core | A2O (a2owb Verilog), dual-issue, out-of-order, 64-bit Bi-Endian|
 | Bus | Wishbone B4, 32-bit byte-addressed |
 | Memory | C++ hash map (flat, zero-latency) |
 | UART | CSR intercept at 0xFFF04000 (LiteX-compatible) |
@@ -18,7 +18,8 @@ MicroPython running bare-metal on the **A2O** core — an open-source 64-bit Pow
 
 - [Verilator](https://www.veripool.org/verilator/) 4.x+
 - `powerpc64-linux-gnu-gcc` cross-compiler
-- [A2O RTL](https://github.com/openpower-cores/a2o)
+- [A2O RTL](https://github.com/OpenPOWERFoundation/a2o.git)
+- [A2O RTL](https://codeberg.org/PowerCommons/a2o.git)
 - [MicroPython source](https://github.com/micropython/micropython)
 
 ### Build MicroPython
@@ -27,17 +28,45 @@ MicroPython running bare-metal on the **A2O** core — an open-source 64-bit Pow
 cd micropython/ports/powerpc
 cp /path/to/a2o-micropython/src/head.S .
 cp /path/to/a2o-micropython/src/powerpc.lds .
-make
+make UART=litex CROSS_COMPILE=powerpc64-buildroot-linux-gnu- -j$(nproc) clean
+make UART=litex CROSS_COMPILE=powerpc64-buildroot-linux-gnu- -j$(nproc)
+
+# convert from bin to hex copy to verilator folder
+
+python3 ~ /a2o-micropython/tools/bin2hex.py \
+    build/firmware.bin \
+    ~/a2o/dev/sim/verilator/cmod7_kintex_rom.init 100000
+
+```
+### Copy micropython Testbench to verilator directory
+
+```bash 
+cp /path/to/a2o-micropython/src/tb_litex_mp.cpp .
 ```
 
+### Compile in verilator using a2o wishbone wrapper
+```bash
+cd a2o/dev/sim/verilator
+
+verilator -cc --exe --trace --Mdir obj_dir \
+    --language 1364-2001 \
+    -Wno-fatal -Wno-LITENDIAN --error-limit 1 \
+    -Iverilog/a2o_litex -Iverilog/work \
+    -Iverilog/trilib -Iverilog/unisims \
+    a2owb.v tb_litex_mp.cpp |& tee verilator.txt
+
+
+```
 ### Build and Run Simulation
 
 ```bash
 cd a2o/dev/sim/verilator
-cp /path/to/a2o-micropython/src/tb_litex_mp.cpp .
-make
+
 cp /path/to/micropython/ports/powerpc/build/cmod7_kintex_rom.init .
-obj_dir/Va2owb 2>/dev/null
+
+make -C ~/a2o/dev/sim/verilator/obj_dir -f Va2owb.mk Va2owb
+
+obj_dir/Va2owb
 # Wait ~5 minutes for the MicroPython banner
 ```
 
@@ -85,11 +114,11 @@ RTL simulation is slow. The banner takes ~5 minutes, each keystroke takes minute
 
 ## References
 
-- [A2O Core](https://github.com/openpower-cores/a2o)
+- [A2O Core](https://codeberg.org/PowerCommons/a2o.git)
 - [MicroPython](https://micropython.org/)
 - [OpenPOWER Foundation](https://openpowerfoundation.org/)
 - [Verilator](https://www.veripool.org/verilator/)
-
+- [PowerCommons](https://powercommons.org/)
 ## License
 
 MIT License for testbench and boot code. A2O core is CC-BY 4.0 (IBM/OpenPOWER). MicroPython is MIT.
